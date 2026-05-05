@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Edge Pro — Multi-Sport Betting Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #080c10;
+  --surface: #0e1318;
+  --surface2: #141b22;
+  --border: #1e2a35;
+  --border2: #243040;
+  --text: #e8edf2;
+  --muted: #5a7080;
+  --accent: #00d4ff;
+  --accent2: #0099bb;
+  --green: #00e676;
+  --red: #ff4757;
+  --gold: #ffd700;
+  --orange: #ff8c00;
+
+  --mlb: #c8102e;
+  --nba: #f97316;
+  --nhl: #5b8dd9;
+  --nfl: #22c55e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── HEADER ── */
+header {
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #0a1017 0%, var(--bg) 100%);
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+
+.logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.9rem;
+  letter-spacing: 3px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo span {
+  color: var(--accent);
+}
+
+.logo-dot {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--accent);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.api-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.api-status.live { color: var(--green); }
+
+/* ── SPORT TABS ── */
+.sport-nav {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 2rem;
+  overflow-x: auto;
+}
+
+.sport-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 1.5rem;
+  height: 52px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1rem;
+  letter-spacing: 2px;
+  color: var(--muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+  white-space: nowrap;
+  position: relative;
+}
+
+.sport-tab:hover { color: var(--text); }
+
+.sport-tab.active { color: var(--text); }
+.sport-tab[data-sport="mlb"].active { border-bottom-color: var(--mlb); }
+.sport-tab[data-sport="nba"].active { border-bottom-color: var(--nba); }
+.sport-tab[data-sport="nhl"].active { border-bottom-color: var(--nhl); }
+.sport-tab[data-sport="nfl"].active { border-bottom-color: var(--nfl); }
+
+.sport-tab .sport-icon { font-size: 1.1rem; }
+
+/* ── LAYOUT ── */
+.main {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 0;
+  min-height: calc(100vh - 117px);
+}
+
+.content {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.sidebar {
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+/* ── SECTION HEADERS ── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 0.85rem;
+  letter-spacing: 3px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.section-count {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: var(--surface2);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ── TABS INSIDE CONTENT ── */
+.inner-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem;
+}
+
+.inner-tab {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+
+.inner-tab:hover { color: var(--text); }
+.inner-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── GAME CARDS ── */
+.games-list { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+
+.game-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.game-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+
+.game-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem 0.5rem;
+}
+
+.game-teams {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.game-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.game-bookmaker {
+  font-size: 0.65rem;
+  color: var(--muted);
+  background: var(--surface2);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.odds-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border-top: 1px solid var(--border);
+}
+
+.odds-cell {
+  padding: 0.6rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-right: 1px solid var(--border);
+}
+
+.odds-cell:last-child { border-right: none; }
+.odds-cell:hover { background: var(--surface2); }
+
+.odds-label { font-size: 0.75rem; color: var(--muted); }
+
+.odds-value {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.odds-value.positive { color: var(--green); }
+.odds-value.negative { color: #ff6b7a; }
+.odds-value.neutral { color: var(--text); }
+
+.market-label {
+  font-size: 0.6rem;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  padding: 0.35rem 1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  text-transform: uppercase;
+  font-family: 'DM Mono', monospace;
+}
+
+.add-parlay-btn {
+  padding: 0.25rem 0.7rem;
+  font-size: 0.65rem;
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.5px;
+}
+
+.add-parlay-btn:hover { border-color: var(--accent); color: var(--accent); }
+.add-parlay-btn.added { border-color: var(--green); color: var(--green); }
+
+/* ── VALUE PICKS ── */
+.picks-list { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 0.6rem; }
+
+.pick-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  transition: border-color 0.2s;
+}
+
+.pick-card:hover { border-color: var(--border2); }
+
+.pick-left { flex: 1; min-width: 0; }
+
+.pick-team {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pick-game {
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pick-odds {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--green);
+  white-space: nowrap;
+}
+
+.edge-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.edge-high { background: rgba(0,230,118,0.15); color: var(--green); }
+.edge-med { background: rgba(255,215,0,0.12); color: var(--gold); }
+
+/* ── SIDEBAR ── */
+.sidebar-section {
+  border-bottom: 1px solid var(--border);
+  padding: 1.25rem;
+}
+
+.sidebar-section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 0.8rem;
+  letter-spacing: 3px;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+/* ── PARLAY BUILDER ── */
+.parlay-legs { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+
+.parlay-leg {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.parlay-leg-info { flex: 1; min-width: 0; }
+
+.parlay-leg-selection {
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.parlay-leg-game {
+  font-size: 0.65rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.parlay-leg-odds {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.remove-leg {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.remove-leg:hover { color: var(--red); }
+
+.parlay-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding: 1.5rem 0;
+  border: 1px dashed var(--border2);
+  border-radius: 6px;
+}
+
+.parlay-result {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.parlay-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.parlay-result-row:last-child { margin-bottom: 0; }
+.parlay-result-label { color: var(--muted); }
+
+.parlay-result-value {
+  font-family: 'DM Mono', monospace;
+  font-weight: 500;
+}
+
+.parlay-result-value.big {
+  font-size: 1rem;
+  color: var(--gold);
+}
+
+.parlay-stake {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.parlay-stake:focus { border-color: var(--accent); }
+
+.btn-primary {
+  width: 100%;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 0.65rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  letter-spacing: 0.5px;
+}
+
+.btn-primary:hover { background: var(--accent2); }
+.btn-primary:active { transform: scale(0.98); }
+
+.btn-secondary {
+  width: 100%;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 0.4rem;
+}
+
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── STATS STRIP ── */
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.stat-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem;
+  text-align: center;
+}
+
+.stat-value {
+  font-family: 'DM Mono', monospace;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.stat-value.green { color: var(--green); }
+.stat-value.red { color: var(--red); }
+
+.stat-label {
+  font-size: 0.55rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
+/* ── BET LOGGER ── */
+.bet-form { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.bet-form input, .bet-form select, .bet-form textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: 'DM Sans', sans-serif;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.bet-form input:focus,
+.bet-form select:focus,
+.bet-form textarea:focus { border-color: var(--accent); }
+
+.bet-form select option { background: var(--surface2); }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+
+/* ── BET LOG TABLE ── */
+.bets-table-wrap { padding: 1rem 1.5rem; }
+
+.bets-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.bets-table th {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  text-transform: uppercase;
+}
+
+.bets-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.bets-table tr:hover td { background: var(--surface2); }
+
+.result-badge {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  border: none;
+  font-family: 'DM Mono', monospace;
+}
+
+.result-pending { background: rgba(90,112,128,0.2); color: var(--muted); }
+.result-win { background: rgba(0,230,118,0.15); color: var(--green); }
+.result-loss { background: rgba(255,71,87,0.15); color: var(--red); }
+.result-push { background: rgba(255,215,0,0.12); color: var(--gold); }
+
+.sport-chip {
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.chip-mlb { background: rgba(200,16,46,0.2); color: var(--mlb); }
+.chip-nba { background: rgba(249,115,22,0.2); color: var(--nba); }
+.chip-nhl { background: rgba(91,141,217,0.2); color: var(--nhl); }
+.chip-nfl { background: rgba(34,197,94,0.2); color: var(--nfl); }
+
+.delete-bet {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+
+.delete-bet:hover { color: var(--red); background: rgba(255,71,87,0.1); }
+
+/* ── LOADING / EMPTY ── */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  color: var(--muted);
+  gap: 1rem;
+}
+
+.spinner {
+  width: 28px; height: 28px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  z-index: 999;
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.3s;
+  pointer-events: none;
+  max-width: 300px;
+}
+
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: var(--green); }
+.toast.error { border-color: var(--red); }
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 460px;
+  padding: 1.5rem;
+  transform: scale(0.95);
+  transition: transform 0.2s;
+}
+
+.modal-overlay.open .modal { transform: scale(1); }
+
+.modal-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.2rem;
+  letter-spacing: 2px;
+  margin-bottom: 1.25rem;
+  color: var(--text);
+}
+
+.modal-close {
+  float: right;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.2rem;
+  margin-top: -4px;
+}
+
+.modal-close:hover { color: var(--text); }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; }
+  .sidebar { border-top: 1px solid var(--border); }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    EDGE <span>PRO</span>
+  </div>
+  <div class="header-right">
+    <span class="api-status" id="apiStatus">● CONNECTING</span>
+  </div>
+</header>
+
+<!-- SPORT TABS -->
+<nav class="sport-nav">
+  <button class="sport-tab active" data-sport="mlb" onclick="switchSport('mlb', this)">
+    <span class="sport-icon">⚾</span> MLB
+  </button>
+  <button class="sport-tab" data-sport="nba" onclick="switchSport('nba', this)">
+    <span class="sport-icon">🏀</span> NBA
+  </button>
+  <button class="sport-tab" data-sport="nhl" onclick="switchSport('nhl', this)">
+    <span class="sport-icon">🏒</span> NHL
+  </button>
+  <button class="sport-tab" data-sport="nfl" onclick="switchSport('nfl', this)">
+    <span class="sport-icon">🏈</span> NFL
+  </button>
+</nav>
+
+<!-- MAIN LAYOUT -->
+<div class="main">
+
+  <!-- LEFT: ODDS + VALUE PICKS -->
+  <div class="content">
+    <div class="inner-tabs">
+      <button class="inner-tab active" onclick="switchInnerTab('odds', this)">Live Odds</button>
+      <button class="inner-tab" onclick="switchInnerTab('value', this)">Value Picks</button>
+      <button class="inner-tab" onclick="switchInnerTab('log', this)">Bet Log</button>
+    </div>
+
+    <!-- ODDS TAB -->
+    <div id="tab-odds">
+      <div class="section-header">
+        <span class="section-title" id="oddsTitle">MLB — Today's Games</span>
+        <span class="section-count" id="gamesCount">—</span>
+      </div>
+      <div id="gamesList" class="games-list">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <span style="font-size:0.8rem">Fetching odds...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VALUE PICKS TAB -->
+    <div id="tab-value" style="display:none">
+      <div class="section-header">
+        <span class="section-title">Value Picks</span>
+        <span class="section-count" id="picksCount">—</span>
+      </div>
+      <div id="picksList" class="picks-list">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <span style="font-size:0.8rem">Calculating edges...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BET LOG TAB -->
+    <div id="tab-log" style="display:none">
+      <div class="section-header">
+        <span class="section-title">Bet History</span>
+        <button class="btn-primary" style="width:auto;padding:0.4rem 1rem;font-size:0.75rem" onclick="openBetModal()">+ Log Bet</button>
+      </div>
+      <div class="bets-table-wrap">
+        <div class="stats-strip" id="betStats">
+          <div class="stat-box"><div class="stat-value" id="statTotal">—</div><div class="stat-label">Total</div></div>
+          <div class="stat-box"><div class="stat-value green" id="statWins">—</div><div class="stat-label">Wins</div></div>
+          <div class="stat-box"><div class="stat-value red" id="statLosses">—</div><div class="stat-label">Losses</div></div>
+          <div class="stat-box"><div class="stat-value" id="statWinRate">—</div><div class="stat-label">Win %</div></div>
+        </div>
+        <table class="bets-table">
+          <thead>
+            <tr>
+              <th>Sport</th>
+              <th>Game</th>
+              <th>Pick</th>
+              <th>Odds</th>
+              <th>Stake</th>
+              <th>Result</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="betsTableBody">
+            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:2rem;font-size:0.8rem">No bets logged yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- PARLAY BUILDER -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">🎯 Parlay Builder</div>
+      <div class="parlay-legs" id="parlayLegs">
+        <div class="parlay-empty" id="parlayEmpty">Click odds to add legs (max 3)</div>
+      </div>
+      <div id="parlayResult" style="display:none">
+        <div class="parlay-result">
+          <div class="parlay-result-row">
+            <span class="parlay-result-label">Combined Odds</span>
+            <span class="parlay-result-value big" id="parlayOdds">—</span>
+          </div>
+          <div class="parlay-result-row">
+            <span class="parlay-result-label">Implied Prob</span>
+            <span class="parlay-result-value" id="parlayProb">—</span>
+          </div>
+          <div class="parlay-result-row">
+            <span class="parlay-result-label">Profit / $100</span>
+            <span class="parlay-result-value" id="parlayPayout">—</span>
+          </div>
+        </div>
+        <input class="parlay-stake" type="number" id="parlayStake" placeholder="Stake ($)" min="1" oninput="updateParlayPayout()"/>
+        <div class="parlay-result-row" id="parlayWinRow" style="display:none;padding:0 0 0.5rem">
+          <span class="parlay-result-label">Total Win</span>
+          <span class="parlay-result-value" style="color:var(--green)" id="parlayWin">—</span>
+        </div>
+        <button class="btn-primary" onclick="logParlayAsBet()">Log Parlay as Bet</button>
+        <button class="btn-secondary" onclick="clearParlay()">Clear</button>
+      </div>
+    </div>
+
+    <!-- QUICK BET LOGGER -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">📋 Quick Log</div>
+      <div class="bet-form">
+        <select id="qSport">
+          <option value="">Sport</option>
+          <option value="mlb">MLB</option>
+          <option value="nba">NBA</option>
+          <option value="nhl">NHL</option>
+          <option value="nfl">NFL</option>
+        </select>
+        <input type="text" id="qGame" placeholder="Game (e.g. Yankees @ Red Sox)"/>
+        <div class="form-row">
+          <select id="qType">
+            <option value="">Type</option>
+            <option value="moneyline">Moneyline</option>
+            <option value="spread">Spread</option>
+            <option value="total">Total</option>
+            <option value="prop">Prop</option>
+            <option value="parlay">Parlay</option>
+          </select>
+          <input type="text" id="qOdds" placeholder="Odds (e.g. +120)"/>
+        </div>
+        <input type="text" id="qSelection" placeholder="Selection (e.g. Yankees -1.5)"/>
+        <div class="form-row">
+          <input type="number" id="qStake" placeholder="Stake ($)" min="1"/>
+          <input type="text" id="qNotes" placeholder="Notes (optional)"/>
+        </div>
+        <button class="btn-primary" onclick="quickLogBet()">Log Bet</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- BET LOG MODAL -->
+<div class="modal-overlay" id="betModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeBetModal()">✕</button>
+    <div class="modal-title">Log a Bet</div>
+    <div class="bet-form">
+      <div class="form-row">
+        <select id="mSport">
+          <option value="">Sport</option>
+          <option value="mlb">MLB</option>
+          <option value="nba">NBA</option>
+          <option value="nhl">NHL</option>
+          <option value="nfl">NFL</option>
+        </select>
+        <select id="mType">
+          <option value="">Bet Type</option>
+          <option value="moneyline">Moneyline</option>
+          <option value="spread">Spread</option>
+          <option value="total">Total</option>
+          <option value="prop">Prop</option>
+          <option value="parlay">Parlay</option>
+        </select>
+      </div>
+      <input type="text" id="mGame" placeholder="Game (e.g. Yankees @ Red Sox)"/>
+      <input type="text" id="mSelection" placeholder="Your pick (e.g. Over 8.5)"/>
+      <div class="form-row">
+        <input type="text" id="mOdds" placeholder="Odds (e.g. -110)"/>
+        <input type="number" id="mStake" placeholder="Stake ($)"/>
+      </div>
+      <textarea id="mNotes" placeholder="Notes (optional)" rows="2" style="resize:vertical"></textarea>
+      <button class="btn-primary" onclick="submitBetModal()">Log Bet</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ──
+let currentSport = 'mlb';
+let currentInnerTab = 'odds';
+let parlayLegs = [];
+let parlayComboOdds = null;
+let allGames = [];
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', () => {
+  loadOdds();
+  loadBets();
+  loadStats();
+});
+
+// ── SPORT SWITCHING ──
+function switchSport(sport, btn) {
+  currentSport = sport;
+  document.querySelectorAll('.sport-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+
+  const titles = { mlb: 'MLB', nba: 'NBA', nhl: 'NHL', nfl: 'NFL' };
+  document.getElementById('oddsTitle').textContent = `${titles[sport]} — Today's Games`;
+
+  if (currentInnerTab === 'odds') loadOdds();
+  else if (currentInnerTab === 'value') loadValuePicks();
+}
+
+// ── INNER TAB SWITCHING ──
+function switchInnerTab(tab, btn) {
+  currentInnerTab = tab;
+  document.querySelectorAll('.inner-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+
+  ['odds','value','log'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
+  });
+
+  if (tab === 'odds' && allGames.length === 0) loadOdds();
+  else if (tab === 'value') loadValuePicks();
+  else if (tab === 'log') { loadBets(); loadStats(); }
+}
+
+// ── ODDS ──
+async function loadOdds() {
+  const el = document.getElementById('gamesList');
+  el.innerHTML = `<div class="loading-state"><div class="spinner"></div><span style="font-size:0.8rem">Fetching odds...</span></div>`;
+  document.getElementById('gamesCount').textContent = '—';
+
+  try {
+    const res = await fetch(`/api/odds/${currentSport}`);
+    const data = await res.json();
+    document.getElementById('apiStatus').textContent = '● LIVE';
+    document.getElementById('apiStatus').className = 'api-status live';
+
+    if (!data.games || data.games.length === 0) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><div>No games scheduled right now</div><div style="font-size:0.7rem;margin-top:0.5rem;color:var(--muted)">${data.message || 'Check back closer to game time'}</div></div>`;
+      document.getElementById('gamesCount').textContent = '0 games';
+      allGames = [];
+      return;
+    }
+
+    allGames = data.games;
+    document.getElementById('gamesCount').textContent = `${data.games.length} game${data.games.length !== 1 ? 's' : ''}`;
+    el.innerHTML = data.games.map(g => renderGameCard(g)).join('');
+  } catch (err) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Failed to load odds</div></div>`;
+    document.getElementById('apiStatus').textContent = '● ERROR';
+  }
+}
+
+function renderGameCard(g) {
+  const time = g.commence ? new Date(g.commence).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'TBD';
+
+  let html = `
+    <div class="game-card">
+      <div class="game-header">
+        <div>
+          <div class="game-teams">${g.away} @ ${g.home}</div>
+          <div class="game-time">${time}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <span class="game-bookmaker">${g.bookmaker}</span>
+          <button class="add-parlay-btn" onclick="addToParlay(event, '${escHtml(g.away)} @ ${escHtml(g.home)}', '${escHtml(g.away)}', '${g.h2h?.[0]?.price || ''}')">+ Parlay</button>
+        </div>
+      </div>`;
+
+  if (g.h2h && g.h2h.length >= 2) {
+    html += `<div class="market-label">Moneyline</div><div class="odds-row">`;
+    g.h2h.forEach(o => {
+      const cls = o.price > 0 ? 'positive' : o.price < 0 ? 'negative' : 'neutral';
+      const fmt = o.price > 0 ? `+${o.price}` : `${o.price}`;
+      html += `<div class="odds-cell" onclick="addToParlay(event, '${escHtml(g.away)} @ ${escHtml(g.home)}', '${escHtml(o.name)}', '${o.price}')">
+        <span class="odds-label">${escHtml(o.name)}</span>
+        <span class="odds-value ${cls}">${fmt}</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (g.spreads && g.spreads.length >= 2) {
+    html += `<div class="market-label">Spread</div><div class="odds-row">`;
+    g.spreads.forEach(o => {
+      const cls = o.price > 0 ? 'positive' : 'negative';
+      const fmt = o.price > 0 ? `+${o.price}` : `${o.price}`;
+      const pt = o.point > 0 ? `+${o.point}` : `${o.point}`;
+      html += `<div class="odds-cell" onclick="addToParlay(event, '${escHtml(g.away)} @ ${escHtml(g.home)}', '${escHtml(o.name)} ${pt}', '${o.price}')">
+        <span class="odds-label">${escHtml(o.name)} <strong style="color:var(--text)">${pt}</strong></span>
+        <span class="odds-value ${cls}">${fmt}</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (g.totals && g.totals.length >= 2) {
+    html += `<div class="market-label">Total</div><div class="odds-row">`;
+    g.totals.forEach(o => {
+      const cls = o.price > 0 ? 'positive' : 'negative';
+      const fmt = o.price > 0 ? `+${o.price}` : `${o.price}`;
+      html += `<div class="odds-cell" onclick="addToParlay(event, '${escHtml(g.away)} @ ${escHtml(g.home)}', '${escHtml(o.name)} ${o.point}', '${o.price}')">
+        <span class="odds-label">${escHtml(o.name)} <strong style="color:var(--text)">${o.point}</strong></span>
+        <span class="odds-value ${cls}">${fmt}</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+// ── VALUE PICKS ──
+async function loadValuePicks() {
+  const el = document.getElementById('picksList');
+  el.innerHTML = `<div class="loading-state"><div class="spinner"></div><span style="font-size:0.8rem">Calculating edges...</span></div>`;
+
+  try {
+    const res = await fetch(`/api/value/${currentSport}`);
+    const data = await res.json();
+
+    if (!data.picks || data.picks.length === 0) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔍</div><div>No strong edges found right now</div></div>`;
+      document.getElementById('picksCount').textContent = '0 picks';
+      return;
+    }
+
+    document.getElementById('picksCount').textContent = `${data.picks.length} pick${data.picks.length !== 1 ? 's' : ''}`;
+    el.innerHTML = data.picks.map(p => {
+      const edgeCls = parseFloat(p.edge) >= 5 ? 'edge-high' : 'edge-med';
+      return `<div class="pick-card">
+        <div class="pick-left">
+          <div class="pick-team">${escHtml(p.team)}</div>
+          <div class="pick-game">${escHtml(p.game)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem">
+          <span class="pick-odds">${p.bestOdds}</span>
+          <span class="edge-badge ${edgeCls}">+${p.edge}%</span>
+          <button class="add-parlay-btn" onclick="addToParlay(event, '${escHtml(p.game)}', '${escHtml(p.team)}', '${p.bestOdds}')">+ Parlay</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Failed to load picks</div></div>`;
+  }
+}
+
+// ── PARLAY BUILDER ──
+function addToParlay(e, game, selection, odds) {
+  e.stopPropagation();
+  if (parlayLegs.length >= 3) { showToast('Max 3 legs in a parlay', 'error'); return; }
+
+  const oddsNum = parseFloat(String(odds).replace('+',''));
+  if (isNaN(oddsNum)) { showToast('Invalid odds', 'error'); return; }
+
+  parlayLegs.push({ game, selection, odds: String(odds) });
+  renderParlayLegs();
+  if (parlayLegs.length >= 2) calculateParlay();
+  showToast(`Added: ${selection}`, 'success');
+}
+
+function renderParlayLegs() {
+  const container = document.getElementById('parlayLegs');
+  const empty = document.getElementById('parlayEmpty');
+
+  if (parlayLegs.length === 0) {
+    container.innerHTML = `<div class="parlay-empty" id="parlayEmpty">Click odds to add legs (max 3)</div>`;
+    document.getElementById('parlayResult').style.display = 'none';
+    return;
+  }
+
+  container.innerHTML = parlayLegs.map((leg, i) => `
+    <div class="parlay-leg">
+      <div class="parlay-leg-info">
+        <div class="parlay-leg-selection">${escHtml(leg.selection)}</div>
+        <div class="parlay-leg-game">${escHtml(leg.game)}</div>
+      </div>
+      <span class="parlay-leg-odds">${leg.odds > 0 || String(leg.odds).startsWith('+') ? (String(leg.odds).startsWith('+') ? leg.odds : '+'+leg.odds) : leg.odds}</span>
+      <button class="remove-leg" onclick="removeParlayLeg(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeParlayLeg(i) {
+  parlayLegs.splice(i, 1);
+  renderParlayLegs();
+  if (parlayLegs.length >= 2) calculateParlay();
+  else document.getElementById('parlayResult').style.display = 'none';
+}
+
+async function calculateParlay() {
+  try {
+    const res = await fetch('/api/parlay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legs: parlayLegs })
+    });
+    const data = await res.json();
+    if (data.error) return;
+
+    parlayComboOdds = data.combinedOdds;
+    document.getElementById('parlayOdds').textContent = data.combinedOdds;
+    document.getElementById('parlayProb').textContent = `${data.impliedProb}%`;
+    document.getElementById('parlayPayout').textContent = `$${parseFloat(data.payoutPer100).toFixed(2)}`;
+    document.getElementById('parlayResult').style.display = 'block';
+    updateParlayPayout();
+  } catch (err) {}
+}
+
+function updateParlayPayout() {
+  const stake = parseFloat(document.getElementById('parlayStake').value);
+  const winRow = document.getElementById('parlayWinRow');
+  if (!stake || !parlayComboOdds) { winRow.style.display = 'none'; return; }
+
+  const odds = parseFloat(parlayComboOdds.replace('+',''));
+  const decimal = odds > 0 ? (odds / 100) + 1 : (100 / Math.abs(odds)) + 1;
+  const totalWin = (stake * decimal).toFixed(2);
+
+  document.getElementById('parlayWin').textContent = `$${totalWin}`;
+  winRow.style.display = 'flex';
+}
+
+function clearParlay() {
+  parlayLegs = [];
+  parlayComboOdds = null;
+  renderParlayLegs();
+}
+
+async function logParlayAsBet() {
+  if (parlayLegs.length < 2) return;
+  const game = parlayLegs.map(l => l.selection).join(' + ');
+  const stake = parseFloat(document.getElementById('parlayStake').value) || null;
+
+  await logBet({
+    sport: currentSport,
+    game: `${parlayLegs.length}-leg Parlay`,
+    bet_type: 'parlay',
+    selection: game,
+    odds: parlayComboOdds || '',
+    stake,
+    notes: parlayLegs.map(l => l.game).join(' | ')
+  });
+
+  clearParlay();
+  if (currentInnerTab === 'log') { loadBets(); loadStats(); }
+}
+
+// ── BET LOGGER ──
+async function quickLogBet() {
+  const sport = document.getElementById('qSport').value;
+  const game = document.getElementById('qGame').value.trim();
+  const bet_type = document.getElementById('qType').value;
+  const selection = document.getElementById('qSelection').value.trim();
+  const odds = document.getElementById('qOdds').value.trim();
+  const stake = parseFloat(document.getElementById('qStake').value) || null;
+  const notes = document.getElementById('qNotes').value.trim();
+
+  if (!sport || !game || !bet_type || !selection || !odds) {
+    showToast('Please fill in all required fields', 'error'); return;
+  }
+
+  await logBet({ sport, game, bet_type, selection, odds, stake, notes });
+  ['qSport','qGame','qType','qSelection','qOdds','qStake','qNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = '';
+  });
+  if (currentInnerTab === 'log') { loadBets(); loadStats(); }
+}
+
+async function logBet(payload) {
+  try {
+    const res = await fetch('/api/bets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); return; }
+    showToast('Bet logged ✓', 'success');
+  } catch (err) {
+    showToast('Failed to log bet', 'error');
+  }
+}
+
+async function loadBets() {
+  try {
+    const res = await fetch('/api/bets');
+    const data = await res.json();
+    renderBetsTable(data.bets || []);
+  } catch (err) {}
+}
+
+async function loadStats() {
+  try {
+    const res = await fetch('/api/bets/stats');
+    const s = await res.json();
+    document.getElementById('statTotal').textContent = s.total || 0;
+    document.getElementById('statWins').textContent = s.wins || 0;
+    document.getElementById('statLosses').textContent = s.losses || 0;
+    const wr = s.wins > 0 && s.total > 0 ? ((s.wins / (parseInt(s.wins)+parseInt(s.losses))) * 100).toFixed(0) + '%' : '—';
+    document.getElementById('statWinRate').textContent = wr;
+  } catch (err) {}
+}
+
+function renderBetsTable(bets) {
+  const tbody = document.getElementById('betsTableBody');
+  if (!bets.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:2rem;font-size:0.8rem">No bets logged yet</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = bets.map(b => {
+    const results = ['pending','win','loss','push'];
+    const resultBtns = results.map(r =>
+      `<button class="result-badge result-${r}${b.result===r?' ':'opacity: 0.4;'}" onclick="updateBetResult(${b.id},'${r}')" style="${b.result!==r?'opacity:0.35;':''}">${r}</button>`
+    ).join(' ');
+
+    const sport = b.sport?.toLowerCase();
+    return `<tr>
+      <td><span class="sport-chip chip-${sport}">${b.sport?.toUpperCase()}</span></td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(b.game)}">${escHtml(b.game)}</td>
+      <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(b.selection)}">${escHtml(b.selection)}</td>
+      <td><span style="font-family:'DM Mono',monospace;font-size:0.8rem">${escHtml(b.odds)}</span></td>
+      <td style="font-family:'DM Mono',monospace;font-size:0.8rem">${b.stake ? '$'+parseFloat(b.stake).toFixed(0) : '—'}</td>
+      <td><button class="result-badge result-${b.result}" onclick="cycleResult(${b.id},'${b.result}')">${b.result}</button></td>
+      <td><button class="delete-bet" onclick="deleteBet(${b.id})" title="Delete">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function cycleResult(id, current) {
+  const order = ['pending','win','loss','push'];
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  await updateBetResult(id, next);
+}
+
+async function updateBetResult(id, result) {
+  try {
+    await fetch(`/api/bets/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ result })
+    });
+    loadBets(); loadStats();
+  } catch (err) {}
+}
+
+async function deleteBet(id) {
+  if (!confirm('Delete this bet?')) return;
+  try {
+    await fetch(`/api/bets/${id}`, { method: 'DELETE' });
+    loadBets(); loadStats();
+    showToast('Bet deleted', 'success');
+  } catch (err) {}
+}
+
+// ── MODAL ──
+function openBetModal() { document.getElementById('betModal').classList.add('open'); }
+function closeBetModal() { document.getElementById('betModal').classList.remove('open'); }
+
+document.getElementById('betModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('betModal')) closeBetModal();
+});
+
+async function submitBetModal() {
+  const sport = document.getElementById('mSport').value;
+  const game = document.getElementById('mGame').value.trim();
+  const bet_type = document.getElementById('mType').value;
+  const selection = document.getElementById('mSelection').value.trim();
+  const odds = document.getElementById('mOdds').value.trim();
+  const stake = parseFloat(document.getElementById('mStake').value) || null;
+  const notes = document.getElementById('mNotes').value.trim();
+
+  if (!sport || !game || !bet_type || !selection || !odds) {
+    showToast('Please fill in all required fields', 'error'); return;
+  }
+
+  await logBet({ sport, game, bet_type, selection, odds, stake, notes });
+  closeBetModal();
+  ['mSport','mGame','mType','mSelection','mOdds','mStake','mNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = '';
+  });
+  if (currentInnerTab === 'log') { loadBets(); loadStats(); }
+}
+
+// ── TOAST ──
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── HELPERS ──
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+</script>
+</body>
+</html>
