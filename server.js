@@ -60,12 +60,19 @@ function getCache(key) {
 }
 
 // ── HELPERS ──
+const MAX_NEGATIVE_ODDS = -200; // Never show picks worse than this
+
 function toDecimal(p) {
   const n = parseFloat(String(p).replace('+', ''));
   return n > 0 ? (n / 100) + 1 : (100 / Math.abs(n)) + 1;
 }
 function impliedProb(p) { return 1 / toDecimal(p); }
 function fmtOdds(p) { return p > 0 ? `+${p}` : `${p}`; }
+function oddsPassesFilter(price) {
+  const n = parseFloat(price);
+  // Always allow positive odds and negatives better than cutoff
+  return n > 0 || n >= MAX_NEGATIVE_ODDS;
+}
 
 // ── MARKET EDGE ──
 function calcMarketEdge(teamName, bookmakers, marketKey) {
@@ -325,7 +332,7 @@ async function buildPicks(sport) {
 
       // Moneyline
       const mlEdge = calcMarketEdge(name, bookmakers, 'h2h');
-      if (mlEdge.bestOdds !== null) {
+      if (mlEdge.bestOdds !== null && oddsPassesFilter(mlEdge.bestOdds)) {
         const marketBonus = Math.min(10, Math.max(-5, mlEdge.edge));
         const confidence = Math.min(95, Math.max(20, Math.round(statScore * 0.82 + marketBonus)));
         const ev = ((mlEdge.avgProb * toDecimal(mlEdge.bestOdds)) - 1) * 100;
@@ -343,7 +350,7 @@ async function buildPicks(sport) {
       if (spreadBm) {
         const spreadMarket = spreadBm.markets.find(m => m.key === 'spreads');
         const spreadOut = spreadMarket?.outcomes.find(o => o.name === name);
-        if (spreadOut) {
+        if (spreadOut && oddsPassesFilter(spreadOut.price)) {
           const sEdge = calcMarketEdge(name, bookmakers, 'spreads');
           const confidence = Math.min(92, Math.max(20, Math.round(statScore * 0.75 + Math.min(8, sEdge.edge))));
           const ev = ((sEdge.avgProb * toDecimal(spreadOut.price)) - 1) * 100;
@@ -360,19 +367,76 @@ async function buildPicks(sport) {
       }
     }
 
-    // Totals
+    // Totals — now uses team offensive stats
     const totalsBm = bookmakers.find(b => b.markets?.find(m => m.key === 'totals'));
     if (totalsBm) {
       const totalsMarket = totalsBm.markets.find(m => m.key === 'totals');
       totalsMarket?.outcomes.forEach(out => {
+        if (!oddsPassesFilter(out.price)) return;
         const tEdge = calcMarketEdge(out.name, bookmakers, 'totals');
-        const confidence = Math.min(80, Math.max(20, Math.round(50 + Math.min(15, tEdge.edge * 2))));
         const ev = ((tEdge.avgProb * toDecimal(out.price)) - 1) * 100;
+
+        // Score totals using combined offensive output of both teams
+        let totalStatScore = 50;
+        if (homeStats && awayStats) {
+          if (sport === 'mlb') {
+            const homeGP = Math.max(1, homeStats.wins + homeStats.losses);
+            const awayGP = Math.max(1, awayStats.wins + awayStats.losses);
+            const combinedRPG = (homeStats.runsScored / homeGP) + (awayStats.runsScored / awayGP);
+            // League avg ~9 runs/game combined. Higher = lean over, lower = lean under
+            const offensiveBias = (combinedRPG - 9) * 4;
+            totalStatScore = out.name === 'Over'
+              ? Math.min(85, Math.max(20, 50 + offensiveBias))
+              : Math.min(85, Math.max(20, 50 - offensiveBias));
+          } else if (sport === 'nba') {
+            const combinedPace = ((homeStats.pace || 0) + (awayStats.pace || 0)) / 2;
+            const combinedOffRating = ((homeStats.offRating || 0) + (awayStats.offRating || 0)) / 2;
+            // League avg pace ~99, off rating ~115
+            const paceBias = (combinedPace - 99) * 0.8;
+            const offBias = (combinedOffRating - 115) * 0.5;
+            totalStatScore = out.name === 'Over'
+              ? Math.min(85, Math.max(20, 50 + paceBias + offBias))
+              : Math.min(85, Math.max(20, 50 - paceBias - offBias));
+          } else if (sport === 'nhl') {
+            const combinedGPG = (homeStats.goalsForPerGame || 0) + (awayStats.goalsForPerGame || 0);
+            // League avg ~6.2 combined goals/game
+            const goalBias = (combinedGPG - 6.2) * 5;
+            totalStatScore = out.name === 'Over'
+              ? Math.min(85, Math.max(20, 50 + goalBias))
+              : Math.min(85, Math.max(20, 50 - goalBias));
+          }
+        }
+
+        const confidence = Math.min(85, Math.max(20, Math.round(
+          totalStatScore * 0.7 + (50 + Math.min(15, tEdge.edge * 2)) * 0.3
+        )));
+
+        // Build total factors
+        const totalFactors = [];
+        if (homeStats && awayStats) {
+          if (sport === 'mlb') {
+            const homeGP = Math.max(1, homeStats.wins + homeStats.losses);
+            const awayGP = Math.max(1, awayStats.wins + awayStats.losses);
+            totalFactors.push({ label: `${home} RS/G`, value: (homeStats.runsScored/homeGP).toFixed(1), positive: out.name === 'Over' });
+            totalFactors.push({ label: `${away} RS/G`, value: (awayStats.runsScored/awayGP).toFixed(1), positive: out.name === 'Over' });
+          } else if (sport === 'nba') {
+            totalFactors.push({ label: `${home} Pace`, value: (homeStats.pace||0).toFixed(1), positive: out.name === 'Over' });
+            totalFactors.push({ label: `${away} Pace`, value: (awayStats.pace||0).toFixed(1), positive: out.name === 'Over' });
+            totalFactors.push({ label: 'Combined Off Rtg', value: `${(((homeStats.offRating||0)+(awayStats.offRating||0))/2).toFixed(1)}`, positive: out.name === 'Over' });
+          } else if (sport === 'nhl') {
+            totalFactors.push({ label: `${home} GF/G`, value: (homeStats.goalsForPerGame||0).toFixed(2), positive: out.name === 'Over' });
+            totalFactors.push({ label: `${away} GF/G`, value: (awayStats.goalsForPerGame||0).toFixed(2), positive: out.name === 'Over' });
+          }
+        }
+
         picks.push({
-          sport, game: `${away} @ ${home}`, team: `${out.name} ${out.point}`, betType: 'Total',
+          sport, game: `${away} @ ${home}`,
+          team: `${out.name} ${out.point}`, betType: 'Total',
           selection: `${out.name} ${out.point}`, bestOdds: fmtOdds(out.price),
           edge: tEdge.edge.toFixed(1), confidence, ev: ev.toFixed(1),
-          commence: game.commence_time, statsAvailable: false, factors: []
+          commence: game.commence_time,
+          statsAvailable: !!(homeStats && awayStats),
+          factors: totalFactors
         });
       });
     }
