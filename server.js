@@ -92,6 +92,173 @@ function calcMarketEdge(teamName, bookmakers, marketKey) {
   return { edge, bestOdds: bestPrice, avgProb };
 }
 
+// ── INJURY & CONTEXTUAL DATA ──
+
+// ESPN injury API (works for NBA, MLB, NHL)
+async function getInjuries(sport) {
+  const cacheKey = `injuries_${sport}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
+  const espnSport = { nba: 'basketball/nba', mlb: 'baseball/mlb', nhl: 'hockey/nhl' }[sport];
+  if (!espnSport) return {};
+
+  try {
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${espnSport}/injuries`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const data = await res.json();
+    const injuries = {};
+
+    data.injuries?.forEach(teamEntry => {
+      const teamName = teamEntry.team?.displayName || '';
+      const injured = [];
+      teamEntry.injuries?.forEach(inj => {
+        const status = inj.status?.toLowerCase() || '';
+        const name = inj.athlete?.displayName || '';
+        const pos = inj.athlete?.position?.abbreviation || '';
+        // Capture anyone not playing or questionable
+        if (['out', 'doubtful', 'questionable', 'day-to-day'].some(s => status.includes(s))) {
+          injured.push({ name, status, pos });
+        }
+      });
+      if (injured.length) injuries[teamName] = injured;
+    });
+
+    setCache(cacheKey, injuries, 15 * 60 * 1000);
+    return injuries;
+  } catch (err) {
+    console.error(`Injury fetch error (${sport}):`, err.message);
+    return {};
+  }
+}
+
+// MLB probable pitchers
+async function getMLBProbablePitchers() {
+  const cached = getCache('mlb_pitchers');
+  if (cached) return cached;
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const res = await fetch(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${today}&hydrate=probablePitcher(note),team`);
+    const data = await res.json();
+    const pitchers = {};
+    data.dates?.[0]?.games?.forEach(game => {
+      const home = game.teams?.home;
+      const away = game.teams?.away;
+      if (home?.team?.name && home?.probablePitcher) {
+        pitchers[home.team.name] = {
+          name: home.probablePitcher.fullName,
+          era: home.probablePitcher.era || null,
+          note: home.probablePitcher.note || ''
+        };
+      }
+      if (away?.team?.name && away?.probablePitcher) {
+        pitchers[away.team.name] = {
+          name: away.probablePitcher.fullName,
+          era: away.probablePitcher.era || null,
+          note: away.probablePitcher.note || ''
+        };
+      }
+    });
+    setCache('mlb_pitchers', pitchers, 60 * 60 * 1000);
+    return pitchers;
+  } catch (err) {
+    console.error('Pitcher fetch error:', err.message);
+    return {};
+  }
+}
+
+// NBA schedule — detect back-to-backs and rest days
+async function getNBARestDays() {
+  const cached = getCache('nba_rest');
+  if (cached) return cached;
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${yesterday}`);
+    const data = await res.json();
+    const playedYesterday = new Set();
+    data.events?.forEach(event => {
+      event.competitions?.[0]?.competitors?.forEach(c => {
+        playedYesterday.add(c.team?.displayName);
+        playedYesterday.add(c.team?.shortDisplayName);
+      });
+    });
+    setCache('nba_rest', playedYesterday, 60 * 60 * 1000);
+    return playedYesterday;
+  } catch (err) {
+    console.error('NBA rest fetch error:', err.message);
+    return new Set();
+  }
+}
+
+// Calculate injury penalty for a team based on player importance
+function calcInjuryPenalty(teamName, injuryMap, sport) {
+  if (!injuryMap || !teamName) return { penalty: 0, injuredPlayers: [] };
+
+  // Fuzzy match team name
+  let injured = null;
+  const tLower = teamName.toLowerCase();
+  for (const [key, val] of Object.entries(injuryMap)) {
+    if (key.toLowerCase().includes(tLower) || tLower.includes(key.toLowerCase().split(' ').pop())) {
+      injured = val;
+      break;
+    }
+  }
+
+  if (!injured || !injured.length) return { penalty: 0, injuredPlayers: [] };
+
+  let penalty = 0;
+  const injuredPlayers = [];
+
+  injured.forEach(player => {
+    const status = player.status?.toLowerCase() || '';
+    const pos = player.pos?.toUpperCase() || '';
+    const isOut = status.includes('out') || status.includes('doubtful');
+    const isQuestionable = status.includes('questionable') || status.includes('day-to-day');
+    const multiplier = isOut ? 1.0 : isQuestionable ? 0.5 : 0.25;
+
+    let importance = 0;
+
+    if (sport === 'nba') {
+      // NBA: guards/forwards = high, centers = medium
+      if (['PG','SG','SF','PF'].includes(pos)) importance = 6;
+      else if (pos === 'C') importance = 4;
+      else importance = 2;
+    } else if (sport === 'mlb') {
+      // MLB: SP = highest, OF/IF = medium, C = medium
+      if (pos === 'SP') importance = 12;
+      else if (['OF','1B','2B','3B','SS'].includes(pos)) importance = 4;
+      else if (pos === 'C') importance = 3;
+      else importance = 2;
+    } else if (sport === 'nhl') {
+      // NHL: G = highest, F = high, D = medium
+      if (pos === 'G') importance = 12;
+      else if (pos === 'F' || pos === 'LW' || pos === 'RW' || pos === 'C') importance = 5;
+      else if (pos === 'D') importance = 3;
+      else importance = 2;
+    }
+
+    const playerPenalty = importance * multiplier;
+    penalty += playerPenalty;
+
+    if (playerPenalty >= 2) {
+      injuredPlayers.push({
+        name: player.name,
+        status: player.status,
+        pos,
+        penalty: playerPenalty
+      });
+    }
+  });
+
+  // Cap penalty at 18 points
+  return {
+    penalty: Math.min(18, penalty),
+    injuredPlayers: injuredPlayers.sort((a, b) => b.penalty - a.penalty).slice(0, 3)
+  };
+}
+
 // ── FETCH RAW ODDS ──
 async function fetchOddsRaw(sport) {
   const cacheKey = `odds_raw_${sport}`;
@@ -313,6 +480,13 @@ async function buildPicks(sport) {
   else if (sport === 'nba') statsMap = await getNBAStats();
   else if (sport === 'nhl') statsMap = await getNHLStats();
 
+  // Fetch contextual data in parallel
+  const [injuryMap, pitchers, b2bSet] = await Promise.all([
+    getInjuries(sport).catch(() => ({})),
+    sport === 'mlb' ? getMLBProbablePitchers().catch(() => ({})) : Promise.resolve({}),
+    sport === 'nba' ? getNBARestDays().catch(() => new Set()) : Promise.resolve(new Set())
+  ]);
+
   const picks = [];
 
   for (const game of games) {
@@ -321,14 +495,59 @@ async function buildPicks(sport) {
     const homeStats = findTeam(home, statsMap);
     const awayStats = findTeam(away, statsMap);
 
+    // Back-to-back detection for NBA
+    const homeB2B = b2bSet.has(home) || [...b2bSet].some(t => home.toLowerCase().includes(t.toLowerCase()));
+    const awayB2B = b2bSet.has(away) || [...b2bSet].some(t => away.toLowerCase().includes(t.toLowerCase()));
+
+    // Probable pitchers for MLB
+    const homePitcher = pitchers[home] || null;
+    const awayPitcher = pitchers[away] || null;
+
     for (const [name, isHome] of [[home, true], [away, false]]) {
       const myStats = isHome ? homeStats : awayStats;
       const oppStats = isHome ? awayStats : homeStats;
+      const isB2B = isHome ? homeB2B : awayB2B;
+      const oppIsB2B = isHome ? awayB2B : homeB2B;
 
       let statScore = 50;
       if (sport === 'mlb') statScore = scoreMLB(myStats, oppStats, isHome);
       else if (sport === 'nba') statScore = scoreNBA(myStats, oppStats, isHome);
       else if (sport === 'nhl') statScore = scoreNHL(myStats, oppStats, isHome);
+
+      // Apply back-to-back penalty (NBA)
+      if (sport === 'nba') {
+        if (isB2B) statScore -= 5;
+        if (oppIsB2B) statScore += 3; // Bonus for playing a team on B2B
+      }
+
+      // Injury penalties
+      const myInjury = calcInjuryPenalty(name, injuryMap, sport);
+      const oppInjury = calcInjuryPenalty(isHome ? away : home, injuryMap, sport);
+      statScore -= myInjury.penalty;
+      statScore += oppInjury.penalty * 0.5; // Smaller boost for opp injuries
+      statScore = Math.min(95, Math.max(15, statScore));
+
+      // Build contextual factors
+      const contextFactors = [];
+
+      if (sport === 'nba' && isB2B) contextFactors.push({ label: 'Back-to-Back', value: 'Fatigue risk', positive: false });
+      if (sport === 'nba' && oppIsB2B) contextFactors.push({ label: 'Opp B2B', value: 'Opponent fatigued', positive: true });
+
+      if (sport === 'mlb') {
+        const myPitcher = isHome ? homePitcher : awayPitcher;
+        const oppPitcher = isHome ? awayPitcher : homePitcher;
+        if (myPitcher) contextFactors.push({ label: 'SP', value: myPitcher.era ? `${myPitcher.name} (${myPitcher.era} ERA)` : myPitcher.name, positive: parseFloat(myPitcher.era) < 4.0 });
+        if (oppPitcher) contextFactors.push({ label: 'Opp SP', value: oppPitcher.era ? `${oppPitcher.name} (${oppPitcher.era} ERA)` : oppPitcher.name, positive: parseFloat(oppPitcher.era) >= 4.0 });
+      }
+
+      myInjury.injuredPlayers.forEach(p => {
+        contextFactors.push({ label: `INJ ${p.pos}`, value: `${p.name} (${p.status})`, positive: false });
+      });
+      oppInjury.injuredPlayers.slice(0, 1).forEach(p => {
+        contextFactors.push({ label: `OPP INJ`, value: `${p.name} (${p.status})`, positive: true });
+      });
+
+      const allFactors = [...buildFactors(sport, myStats, oppStats, isHome), ...contextFactors].slice(0, 6);
 
       // Moneyline
       const mlEdge = calcMarketEdge(name, bookmakers, 'h2h');
@@ -341,7 +560,8 @@ async function buildPicks(sport) {
           selection: name, bestOdds: fmtOdds(mlEdge.bestOdds),
           edge: mlEdge.edge.toFixed(1), confidence, ev: ev.toFixed(1),
           commence: game.commence_time, statsAvailable: !!(homeStats && awayStats),
-          factors: buildFactors(sport, myStats, oppStats, isHome)
+          factors: allFactors,
+          warnings: myInjury.injuredPlayers.length > 0 ? `${myInjury.injuredPlayers.length} key injury/injuries` : null
         });
       }
 
@@ -361,13 +581,14 @@ async function buildPicks(sport) {
             bestOdds: fmtOdds(spreadOut.price),
             edge: sEdge.edge.toFixed(1), confidence, ev: ev.toFixed(1),
             commence: game.commence_time, statsAvailable: !!(homeStats && awayStats),
-            factors: buildFactors(sport, myStats, oppStats, isHome)
+            factors: allFactors,
+            warnings: myInjury.injuredPlayers.length > 0 ? `${myInjury.injuredPlayers.length} key injury/injuries` : null
           });
         }
       }
     }
 
-    // Totals — now uses team offensive stats
+    // Totals — uses team offensive stats + injury/pitcher context
     const totalsBm = bookmakers.find(b => b.markets?.find(m => m.key === 'totals'));
     if (totalsBm) {
       const totalsMarket = totalsBm.markets.find(m => m.key === 'totals');
@@ -376,30 +597,33 @@ async function buildPicks(sport) {
         const tEdge = calcMarketEdge(out.name, bookmakers, 'totals');
         const ev = ((tEdge.avgProb * toDecimal(out.price)) - 1) * 100;
 
-        // Score totals using combined offensive output of both teams
         let totalStatScore = 50;
         if (homeStats && awayStats) {
           if (sport === 'mlb') {
             const homeGP = Math.max(1, homeStats.wins + homeStats.losses);
             const awayGP = Math.max(1, awayStats.wins + awayStats.losses);
             const combinedRPG = (homeStats.runsScored / homeGP) + (awayStats.runsScored / awayGP);
-            // League avg ~9 runs/game combined. Higher = lean over, lower = lean under
-            const offensiveBias = (combinedRPG - 9) * 4;
+            let offensiveBias = (combinedRPG - 9) * 4;
+            // Ace pitchers suppress scoring — adjust totals
+            const homeERA = parseFloat(homePitcher?.era) || 4.5;
+            const awayERA = parseFloat(awayPitcher?.era) || 4.5;
+            const pitchingBias = ((4.5 - homeERA) + (4.5 - awayERA)) * 2;
+            offensiveBias -= pitchingBias;
             totalStatScore = out.name === 'Over'
               ? Math.min(85, Math.max(20, 50 + offensiveBias))
               : Math.min(85, Math.max(20, 50 - offensiveBias));
           } else if (sport === 'nba') {
             const combinedPace = ((homeStats.pace || 0) + (awayStats.pace || 0)) / 2;
             const combinedOffRating = ((homeStats.offRating || 0) + (awayStats.offRating || 0)) / 2;
-            // League avg pace ~99, off rating ~115
-            const paceBias = (combinedPace - 99) * 0.8;
+            let paceBias = (combinedPace - 99) * 0.8;
             const offBias = (combinedOffRating - 115) * 0.5;
+            // B2B teams score less
+            if (homeB2B || awayB2B) paceBias -= 3;
             totalStatScore = out.name === 'Over'
               ? Math.min(85, Math.max(20, 50 + paceBias + offBias))
               : Math.min(85, Math.max(20, 50 - paceBias - offBias));
           } else if (sport === 'nhl') {
             const combinedGPG = (homeStats.goalsForPerGame || 0) + (awayStats.goalsForPerGame || 0);
-            // League avg ~6.2 combined goals/game
             const goalBias = (combinedGPG - 6.2) * 5;
             totalStatScore = out.name === 'Over'
               ? Math.min(85, Math.max(20, 50 + goalBias))
@@ -411,7 +635,6 @@ async function buildPicks(sport) {
           totalStatScore * 0.7 + (50 + Math.min(15, tEdge.edge * 2)) * 0.3
         )));
 
-        // Build total factors
         const totalFactors = [];
         if (homeStats && awayStats) {
           if (sport === 'mlb') {
@@ -419,10 +642,13 @@ async function buildPicks(sport) {
             const awayGP = Math.max(1, awayStats.wins + awayStats.losses);
             totalFactors.push({ label: `${home} RS/G`, value: (homeStats.runsScored/homeGP).toFixed(1), positive: out.name === 'Over' });
             totalFactors.push({ label: `${away} RS/G`, value: (awayStats.runsScored/awayGP).toFixed(1), positive: out.name === 'Over' });
+            if (homePitcher) totalFactors.push({ label: `${home} SP`, value: homePitcher.era ? `${homePitcher.name} (${homePitcher.era})` : homePitcher.name, positive: out.name === 'Under' && parseFloat(homePitcher.era) < 3.5 });
+            if (awayPitcher) totalFactors.push({ label: `${away} SP`, value: awayPitcher.era ? `${awayPitcher.name} (${awayPitcher.era})` : awayPitcher.name, positive: out.name === 'Under' && parseFloat(awayPitcher.era) < 3.5 });
           } else if (sport === 'nba') {
             totalFactors.push({ label: `${home} Pace`, value: (homeStats.pace||0).toFixed(1), positive: out.name === 'Over' });
             totalFactors.push({ label: `${away} Pace`, value: (awayStats.pace||0).toFixed(1), positive: out.name === 'Over' });
             totalFactors.push({ label: 'Combined Off Rtg', value: `${(((homeStats.offRating||0)+(awayStats.offRating||0))/2).toFixed(1)}`, positive: out.name === 'Over' });
+            if (homeB2B || awayB2B) totalFactors.push({ label: 'B2B Factor', value: `${homeB2B ? home : away} on B2B`, positive: out.name === 'Under' });
           } else if (sport === 'nhl') {
             totalFactors.push({ label: `${home} GF/G`, value: (homeStats.goalsForPerGame||0).toFixed(2), positive: out.name === 'Over' });
             totalFactors.push({ label: `${away} GF/G`, value: (awayStats.goalsForPerGame||0).toFixed(2), positive: out.name === 'Over' });
@@ -436,7 +662,8 @@ async function buildPicks(sport) {
           edge: tEdge.edge.toFixed(1), confidence, ev: ev.toFixed(1),
           commence: game.commence_time,
           statsAvailable: !!(homeStats && awayStats),
-          factors: totalFactors
+          factors: totalFactors,
+          warnings: null
         });
       });
     }
@@ -447,7 +674,74 @@ async function buildPicks(sport) {
   return picks;
 }
 
-// ── PICKS ENDPOINT ──
+// ── PARLAY SUGGESTIONS ENDPOINT ──
+app.get('/api/parlays/suggested', async (req, res) => {
+  try {
+    const [mlb, nba, nhl] = await Promise.all([
+      buildPicks('mlb').catch(() => []),
+      buildPicks('nba').catch(() => []),
+      buildPicks('nhl').catch(() => [])
+    ]);
+
+    function buildBestParlay(picks) {
+      // Filter to positive EV, valid odds, different games
+      const eligible = picks.filter(p =>
+        parseFloat(p.ev) > 0 &&
+        oddsPassesFilter(parseFloat(p.bestOdds.replace('+',''))) &&
+        p.confidence >= 50
+      );
+
+      // Pick top 3 from different games
+      const chosen = [];
+      const usedGames = new Set();
+      for (const pick of eligible) {
+        if (usedGames.has(pick.game)) continue;
+        chosen.push(pick);
+        usedGames.add(pick.game);
+        if (chosen.length === 3) break;
+      }
+
+      if (chosen.length < 2) return null;
+
+      // Calculate combined odds
+      const combinedDecimal = chosen.reduce((acc, p) => acc * toDecimal(p.bestOdds), 1);
+      const combinedAmerican = combinedDecimal >= 2
+        ? Math.round((combinedDecimal - 1) * 100)
+        : Math.round(-100 / (combinedDecimal - 1));
+      const impliedProb = (1 / combinedDecimal * 100).toFixed(1);
+      const payoutPer100 = ((combinedDecimal - 1) * 100).toFixed(2);
+      const avgConfidence = Math.round(chosen.reduce((a, p) => a + p.confidence, 0) / chosen.length);
+
+      return {
+        legs: chosen.map(p => ({
+          game: p.game,
+          selection: p.selection,
+          betType: p.betType,
+          odds: p.bestOdds,
+          confidence: p.confidence,
+          sport: p.sport,
+          factors: p.factors?.slice(0, 2) || []
+        })),
+        combinedOdds: combinedAmerican > 0 ? `+${combinedAmerican}` : `${combinedAmerican}`,
+        impliedProb,
+        payoutPer100,
+        avgConfidence
+      };
+    }
+
+    const allPicks = [...mlb, ...nba, ...nhl].sort((a, b) => b.confidence - a.confidence);
+
+    res.json({
+      overall: buildBestParlay(allPicks),
+      mlb: buildBestParlay(mlb),
+      nba: buildBestParlay(nba),
+      nhl: buildBestParlay(nhl)
+    });
+  } catch (err) {
+    console.error('Parlay suggestions error:', err.message);
+    res.status(500).json({ error: 'Failed to generate parlay suggestions' });
+  }
+});
 app.get('/api/picks/all', async (req, res) => {
   try {
     const [mlb, nba, nhl] = await Promise.all([
