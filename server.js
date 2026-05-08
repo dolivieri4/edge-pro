@@ -1022,24 +1022,89 @@ app.get('/api/bets/stats', async (req, res) => {
         COALESCE(SUM(stake) FILTER (WHERE result='loss'),0) as lost_staked
       FROM bets
     `);
-    // Per sport breakdown
+
+    // P&L calculation — compute profit per bet
+    const allBets = await pool.query(`SELECT odds, stake, result FROM bets WHERE result != 'pending' AND stake IS NOT NULL`);
+    let totalProfit = 0;
+    allBets.rows.forEach(bet => {
+      const stake = parseFloat(bet.stake);
+      const oddsNum = parseFloat(String(bet.odds).replace('+',''));
+      const dec = oddsNum > 0 ? (oddsNum/100)+1 : (100/Math.abs(oddsNum))+1;
+      if (bet.result === 'win') totalProfit += stake * (dec - 1);
+      else if (bet.result === 'loss') totalProfit -= stake;
+      // push = 0
+    });
+    const totalStaked = parseFloat(r.rows[0].total_staked)||0;
+    const roi = totalStaked > 0 ? ((totalProfit/totalStaked)*100).toFixed(1) : '0.0';
+
+    // Per sport P&L
     const bySport = await pool.query(`
       SELECT sport,
         COUNT(*) FILTER (WHERE result='win') as wins,
         COUNT(*) FILTER (WHERE result='loss') as losses,
-        COUNT(*) FILTER (WHERE result!='pending') as settled
-      FROM bets GROUP BY sport
+        COUNT(*) FILTER (WHERE result!='pending') as settled,
+        COALESCE(SUM(stake) FILTER (WHERE result='win'),0) as won_stake,
+        COALESCE(SUM(stake) FILTER (WHERE result='loss'),0) as lost_stake
+      FROM bets GROUP BY sport ORDER BY settled DESC
     `);
+
+    // Compute P&L per sport
+    const bySportWithPL = await Promise.all(bySport.rows.map(async row => {
+      const sportBets = await pool.query(`SELECT odds, stake, result FROM bets WHERE sport=$1 AND result!='pending' AND stake IS NOT NULL`,[row.sport]);
+      let pl = 0;
+      sportBets.rows.forEach(bet => {
+        const stake = parseFloat(bet.stake);
+        const oddsNum = parseFloat(String(bet.odds).replace('+',''));
+        const dec = oddsNum > 0 ? (oddsNum/100)+1 : (100/Math.abs(oddsNum))+1;
+        if (bet.result === 'win') pl += stake * (dec - 1);
+        else if (bet.result === 'loss') pl -= stake;
+      });
+      return {...row, pl: pl.toFixed(2)};
+    }));
+
     // Per bet type
     const byType = await pool.query(`
       SELECT bet_type,
         COUNT(*) FILTER (WHERE result='win') as wins,
         COUNT(*) FILTER (WHERE result='loss') as losses,
         COUNT(*) FILTER (WHERE result!='pending') as settled
-      FROM bets GROUP BY bet_type
+      FROM bets GROUP BY bet_type ORDER BY settled DESC
     `);
-    res.json({...r.rows[0], bySport:bySport.rows, byType:byType.rows});
+
+    // Recent form — last 10 settled bets
+    const recentForm = await pool.query(`
+      SELECT result FROM bets WHERE result != 'pending' ORDER BY created_at DESC LIMIT 10
+    `);
+
+    res.json({
+      ...r.rows[0],
+      totalProfit: totalProfit.toFixed(2),
+      roi,
+      bySport: bySportWithPL,
+      byType: byType.rows,
+      recentForm: recentForm.rows.map(r => r.result)
+    });
   } catch (err) { res.status(500).json({error:'Failed to get stats'}); }
+});
+
+// Best Bet of the Day
+app.get('/api/best-bet', async (req, res) => {
+  try {
+    const [mlb,nba,nhl] = await Promise.all([
+      buildPicks('mlb').catch(()=>[]),
+      buildPicks('nba').catch(()=>[]),
+      buildPicks('nhl').catch(()=>[])
+    ]);
+    const all = [...mlb,...nba,...nhl]
+      .filter(p => parseFloat(p.ev) > 0 && p.confidence >= 60)
+      .sort((a,b) => {
+        // Score = confidence * 0.6 + EV * 0.3 + edge * 0.1
+        const scoreA = a.confidence*0.6 + parseFloat(a.ev)*0.3 + parseFloat(a.edge)*0.1;
+        const scoreB = b.confidence*0.6 + parseFloat(b.ev)*0.3 + parseFloat(b.edge)*0.1;
+        return scoreB - scoreA;
+      });
+    res.json({ bestBet: all[0] || null });
+  } catch (err) { res.status(500).json({error:'Failed to get best bet'}); }
 });
 
 app.listen(PORT, () => console.log(`Edge Pro running on port ${PORT}`));

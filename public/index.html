@@ -42,6 +42,46 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 .credit-counter.warn .credit-fill{background:var(--gold);}
 .credit-counter.low .credit-fill{background:var(--red);}
 
+/* ── BEST BET OF THE DAY ── */
+.best-bet-banner{
+  margin:1.25rem 1.25rem 0;border-radius:var(--radius-xl);overflow:hidden;
+  background:linear-gradient(135deg,rgba(0,200,240,.06) 0%,rgba(0,144,184,.04) 100%);
+  border:1px solid rgba(0,200,240,.25);position:relative;
+}
+.best-bet-banner::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2),transparent);}
+.best-bet-label{display:flex;align-items:center;gap:6px;padding:.6rem 1rem .3rem;font-family:'Bebas Neue',sans-serif;font-size:.72rem;letter-spacing:3px;color:var(--accent);}
+.best-bet-label .bb-dot{width:6px;height:6px;background:var(--accent);border-radius:50%;box-shadow:0 0 6px var(--accent);animation:pulse 2s infinite;}
+.best-bet-inner{padding:.3rem 1rem 1rem;}
+.best-bet-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.5rem;}
+.best-bet-name{font-size:1.05rem;font-weight:700;margin-bottom:2px;}
+.best-bet-game{font-size:.65rem;color:var(--muted);}
+.best-bet-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;}
+.best-bet-odds{font-family:'DM Mono',monospace;font-size:1rem;font-weight:500;}
+.best-bet-odds.pos{color:var(--green);}
+.best-bet-odds.neg{color:#ff6878;}
+
+/* ── COUNTDOWN ── */
+.countdown{display:inline-flex;align-items:center;gap:4px;font-family:'DM Mono',monospace;font-size:.6rem;padding:2px 6px;border-radius:3px;margin-left:4px;}
+.countdown.urgent{background:rgba(255,61,85,.12);color:var(--red);border:1px solid rgba(255,61,85,.25);animation:urgentPulse 1.5s infinite;}
+.countdown.soon{background:rgba(240,184,0,.1);color:var(--gold);border:1px solid rgba(240,184,0,.2);}
+@keyframes urgentPulse{0%,100%{opacity:1;}50%{opacity:.6;}}
+
+/* ── P&L TRACKER ── */
+.pl-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:1rem;}
+.pl-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:.65rem;text-align:center;}
+.pl-val{font-family:'DM Mono',monospace;font-size:1rem;font-weight:600;}
+.pl-val.profit{color:var(--green);}
+.pl-val.loss{color:var(--red);}
+.pl-val.neutral{color:var(--text2);}
+.pl-lbl{font-size:.52rem;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;}
+.recent-form{display:flex;align-items:center;gap:.3rem;margin-bottom:1rem;flex-wrap:wrap;}
+.form-label{font-size:.65rem;color:var(--muted);margin-right:.2rem;}
+.form-dot{width:20px;height:8px;border-radius:2px;}
+.form-dot.win{background:var(--green);}
+.form-dot.loss{background:var(--red);}
+.form-dot.push{background:var(--gold);}
+.form-dot.pending{background:var(--border2);}
+
 /* ── NAV ── */
 .sport-nav{display:flex;align-items:center;background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;gap:0;overflow-x:auto;}
 .sport-btn{display:flex;align-items:center;gap:6px;padding:0 1.25rem;height:48px;font-family:'Bebas Neue',sans-serif;font-size:.85rem;letter-spacing:2px;color:var(--muted);cursor:pointer;border:none;background:none;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap;flex-shrink:0;}
@@ -371,6 +411,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
         <span class="page-title">Value Picks</span>
         <button class="btn-sm ghost" onclick="loadAllPicks(true)">↻ Refresh</button>
       </div>
+      <div id="bestBetBanner"></div>
       <div id="picksPage" class="picks-page">
         <div class="loading-state"><div class="spinner"></div><span style="font-size:.75rem">Analyzing games across MLB, NBA & NHL...</span></div>
       </div>
@@ -400,6 +441,12 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
           <div class="stat-card"><div class="stat-card-val red" id="sLosses">—</div><div class="stat-card-lbl">Losses</div></div>
           <div class="stat-card"><div class="stat-card-val gold" id="sWR">—</div><div class="stat-card-lbl">Win %</div></div>
         </div>
+        <div class="pl-strip">
+          <div class="pl-card"><div class="pl-val neutral" id="plProfit">—</div><div class="pl-lbl">Total P&L</div></div>
+          <div class="pl-card"><div class="pl-val neutral" id="plROI">—</div><div class="pl-lbl">ROI</div></div>
+          <div class="pl-card"><div class="pl-val neutral" id="plStaked">—</div><div class="pl-lbl">Total Staked</div></div>
+        </div>
+        <div class="recent-form" id="recentForm"></div>
         <div class="track-grid" id="trackGrid"></div>
         <div class="log-actions">
           <span style="font-size:.72rem;color:var(--muted)">Click result badge to update</span>
@@ -562,9 +609,81 @@ function renderGameCard(g){
 }
 
 // ── PICKS ──
+// ── BEST BET ──
+async function loadBestBet(){
+  try{
+    const res=await fetch('/api/best-bet');
+    const data=await res.json();
+    const el=document.getElementById('bestBetBanner');
+    if(!el) return;
+    if(!data.bestBet){el.innerHTML='';return;}
+    const p=data.bestBet;
+    const oddsNum=parseFloat(p.bestOdds);
+    const oddsClass=oddsNum>0?'pos':'neg';
+    const time=p.commence?new Date(p.commence).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'}):'';
+    const countdown=getCountdown(p.commence);
+    const countdownHtml=countdown?`<span class="countdown ${countdown.cls}">${countdown.text}</span>`:'';
+    const factorsHtml=(p.factors||[]).slice(0,3).map(f=>`<div class="factor ${f.positive?'pos':'neg'}"><span class="factor-icon">${f.positive?'▲':'▼'}</span><span class="factor-key">${f.label}:</span><span class="factor-val">${f.value}</span></div>`).join('');
+    el.innerHTML=`<div class="best-bet-banner">
+      <div class="best-bet-label"><div class="bb-dot"></div>Best Bet of the Day</div>
+      <div class="best-bet-inner">
+        <div class="best-bet-top">
+          <div>
+            <div class="best-bet-name">${esc(p.team)}</div>
+            <div class="best-bet-game">${esc(p.game)} · ${p.betType}${time?` · ${time}`:''}${countdownHtml}</div>
+          </div>
+          <div class="best-bet-right">
+            ${renderConfRing(p.confidence)}
+            <span class="best-bet-odds ${oddsClass}">${p.bestOdds}</span>
+            ${p.units>0?`<span class="units-tag">${p.units}u</span>`:''}
+          </div>
+        </div>
+        ${factorsHtml?`<div class="factors-row" style="margin-bottom:.6rem">${factorsHtml}</div>`:''}
+        <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+          <span class="tag tag-sport-${p.sport}">${p.sport.toUpperCase()}</span>
+          <span class="tag tag-type">${p.betType}</span>
+          <span class="tag ${parseFloat(p.ev)>0?'tag-ev-pos':'tag-ev-neg'}">EV ${parseFloat(p.ev)>0?'+':''}${p.ev}%</span>
+          ${parseFloat(p.edge)>0?`<span class="tag tag-edge">+${p.edge}% Edge</span>`:''}
+          <button class="pick-btn" style="margin-left:auto" onclick="addToBuilder(event,'${esc(p.game)}','${esc(p.selection)}','${p.bestOdds}')">+ Parlay</button>
+        </div>
+      </div>
+    </div>`;
+    // Start countdown timer
+    if(countdown) startCountdown(p.commence);
+  }catch(err){console.error('Best bet error:',err);}
+}
+
+// ── COUNTDOWN ──
+function getCountdown(commence){
+  if(!commence) return null;
+  const diff=new Date(commence)-new Date();
+  if(diff<=0||diff>7200000) return null; // only show if within 2 hours
+  const mins=Math.floor(diff/60000);
+  const hrs=Math.floor(mins/60);
+  const remMins=mins%60;
+  const text=hrs>0?`${hrs}h ${remMins}m`:`${mins}m`;
+  const cls=mins<=30?'urgent':'soon';
+  return {text:`⏱ ${text}`,cls};
+}
+
+let countdownInterval=null;
+function startCountdown(commence){
+  if(countdownInterval) clearInterval(countdownInterval);
+  countdownInterval=setInterval(()=>{
+    const countdown=getCountdown(commence);
+    // Update any countdown elements on picks
+    document.querySelectorAll('[data-commence]').forEach(el=>{
+      const c=getCountdown(el.dataset.commence);
+      const cdEl=el.querySelector('.countdown');
+      if(c&&cdEl){cdEl.textContent=c.text;cdEl.className=`countdown ${c.cls}`;}
+    });
+  },30000);
+}
+
 async function loadAllPicks(force){
   if(allPicksData&&!force){renderPicksPage(allPicksData);return;}
   document.getElementById('picksPage').innerHTML=`<div class="loading-state"><div class="spinner"></div><span style="font-size:.75rem">Analyzing MLB, NBA & NHL games...</span></div>`;
+  loadBestBet();
   try{
     const res=await fetch('/api/picks/all');
     allPicksData=await res.json();
@@ -618,17 +737,19 @@ function renderPickCard(pick,featured,showSport){
   const evNum=parseFloat(pick.ev);
   const evClass=evNum>0?'tag-ev-pos':'tag-ev-neg';
   const time=pick.commence?new Date(pick.commence).toLocaleString('en-US',{weekday:'short',hour:'numeric',minute:'2-digit'}):'';
+  const countdown=getCountdown(pick.commence);
+  const countdownHtml=countdown?`<span class="countdown ${countdown.cls}">${countdown.text}</span>`:'';
   const factorsHtml=(pick.factors||[]).map(f=>`<div class="factor ${f.positive?'pos':'neg'}"><span class="factor-icon">${f.positive?'▲':'▼'}</span><span class="factor-key">${f.label}:</span><span class="factor-val">${f.value}</span></div>`).join('');
   const lineMoveHtml=pick.lineMovement?`<div class="line-move ${pick.lineMovement.direction}">📈 Line moved ${pick.lineMovement.opening>0?'+':''}${pick.lineMovement.opening} → ${pick.lineMovement.current>0?'+':''}${pick.lineMovement.current} (${pick.lineMovement.direction==='steam'?'Sharp money in':'Fading'})</div>`:'';
   const warningHtml=pick.warnings?`<div class="pick-warning">⚠️ ${esc(pick.warnings)}</div>`:'';
   const unitsHtml=pick.units>0?`<span class="units-tag">${pick.units}u</span>`:'';
   const sportBadge=showSport?`<span class="tag tag-sport-${pick.sport}">${pick.sport.toUpperCase()}</span>`:'';
   const statsTag=pick.statsAvailable?'':`<span class="tag tag-odds-only">Odds Only</span>`;
-  return `<div class="pick-card ${featured?'featured':''}">
+  return `<div class="pick-card ${featured?'featured':''}" data-commence="${pick.commence||''}">
     <div class="pick-top">
       <div class="pick-left">
         <div class="pick-name">${esc(pick.team)}</div>
-        <div class="pick-game">${esc(pick.game)}${time?` · ${time}`:''}${pick.betType?` · ${pick.betType}`:''}</div>
+        <div class="pick-game">${esc(pick.game)}${time?` · ${time}`:''}${countdownHtml}${pick.betType?` · ${pick.betType}`:''}</div>
       </div>
       <div class="pick-right">${renderConfRing(pick.confidence)}<span class="pick-odds-tag ${oddsClass}">${pick.bestOdds}</span>${unitsHtml}</div>
     </div>
@@ -878,6 +999,25 @@ async function loadStats(){
     document.getElementById('sLosses').textContent=s.losses||0;
     const wr=parseInt(s.wins)+parseInt(s.losses)>0?((s.wins/(parseInt(s.wins)+parseInt(s.losses)))*100).toFixed(0)+'%':'—';
     document.getElementById('sWR').textContent=wr;
+
+    // P&L
+    const profit=parseFloat(s.totalProfit||0);
+    const profitEl=document.getElementById('plProfit');
+    profitEl.textContent=(profit>=0?'+':'')+`$${Math.abs(profit).toFixed(2)}`;
+    profitEl.className=`pl-val ${profit>0?'profit':profit<0?'loss':'neutral'}`;
+    const roiEl=document.getElementById('plROI');
+    const roi=parseFloat(s.roi||0);
+    roiEl.textContent=(roi>=0?'+':'')+`${roi}%`;
+    roiEl.className=`pl-val ${roi>0?'profit':roi<0?'loss':'neutral'}`;
+    document.getElementById('plStaked').textContent=`$${parseFloat(s.total_staked||0).toFixed(2)}`;
+
+    // Recent form
+    const formEl=document.getElementById('recentForm');
+    if(formEl&&s.recentForm?.length){
+      formEl.innerHTML=`<span class="form-label">Last ${s.recentForm.length}:</span>`+
+        s.recentForm.map(r=>`<div class="form-dot ${r}" title="${r}"></div>`).join('');
+    }
+
     renderTrackRecord(s);
   }catch{}
 }
@@ -886,7 +1026,6 @@ function renderTrackRecord(s){
   const el=document.getElementById('trackGrid');
   if(!el) return;
   let html='';
-  // By sport
   if(s.bySport?.length){
     html+=`<div class="track-card"><div class="track-card-title">By Sport</div>`;
     s.bySport.forEach(row=>{
@@ -894,11 +1033,13 @@ function renderTrackRecord(s){
       if(!settled) return;
       const wr=settled?((row.wins/settled)*100).toFixed(0)+'%':'—';
       const cls=parseInt(row.wins)/settled>=0.55?'good':parseInt(row.wins)/settled>=0.45?'ok':'bad';
-      html+=`<div class="track-row"><span class="track-label">${row.sport?.toUpperCase()}</span><div style="display:flex;gap:.5rem;align-items:center"><span class="track-rec">${row.wins}-${row.losses}</span><span class="track-wr ${cls}">${wr}</span></div></div>`;
+      const pl=parseFloat(row.pl||0);
+      const plStr=(pl>=0?'+':'')+`$${Math.abs(pl).toFixed(0)}`;
+      const plCls=pl>0?'color:var(--green)':pl<0?'color:var(--red)':'color:var(--muted)';
+      html+=`<div class="track-row"><span class="track-label">${row.sport?.toUpperCase()}</span><div style="display:flex;gap:.5rem;align-items:center"><span style="font-family:'DM Mono',monospace;font-size:.62rem;${plCls}">${plStr}</span><span class="track-rec">${row.wins}-${row.losses}</span><span class="track-wr ${cls}">${wr}</span></div></div>`;
     });
     html+=`</div>`;
   }
-  // By type
   if(s.byType?.length){
     html+=`<div class="track-card"><div class="track-card-title">By Bet Type</div>`;
     s.byType.forEach(row=>{
