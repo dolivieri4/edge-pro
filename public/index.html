@@ -35,6 +35,12 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 .header-right{display:flex;align-items:center;gap:1rem;}
 .api-badge{font-family:'DM Mono',monospace;font-size:.6rem;letter-spacing:1.5px;padding:3px 10px;border-radius:20px;border:1px solid var(--border2);color:var(--muted);}
 .api-badge.live{border-color:rgba(0,217,104,.3);color:var(--green);background:var(--green2);}
+.credit-counter{font-family:'DM Mono',monospace;font-size:.6rem;letter-spacing:1px;padding:3px 10px;border-radius:20px;border:1px solid var(--border2);color:var(--muted);display:flex;align-items:center;gap:5px;}
+.credit-counter .credit-bar{width:40px;height:3px;background:var(--border2);border-radius:2px;overflow:hidden;}
+.credit-counter .credit-fill{height:100%;border-radius:2px;transition:width .5s;}
+.credit-counter.ok .credit-fill{background:var(--green);}
+.credit-counter.warn .credit-fill{background:var(--gold);}
+.credit-counter.low .credit-fill{background:var(--red);}
 
 /* ── NAV ── */
 .sport-nav{display:flex;align-items:center;background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;gap:0;overflow-x:auto;}
@@ -323,6 +329,10 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 <header class="header">
   <div class="logo">EDGE <span class="logo-accent">PRO</span></div>
   <div class="header-right">
+    <div id="creditCounter" class="credit-counter ok" title="API Credits Used This Month">
+      <span id="creditText">— / 500</span>
+      <div class="credit-bar"><div class="credit-fill" id="creditFill" style="width:0%"></div></div>
+    </div>
     <div class="live-dot"></div>
     <span class="api-badge" id="apiBadge">CONNECTING</span>
   </div>
@@ -341,7 +351,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       <button class="inner-btn active" onclick="switchTab('odds',this)">Live Odds</button>
       <button class="inner-btn" onclick="switchTab('picks',this)">Value Picks</button>
       <button class="inner-btn" onclick="switchTab('parlays',this)">Parlays</button>
-      <button class="inner-btn" onclick="switchTab('props',this)">Props</button>
       <button class="inner-btn" onclick="switchTab('log',this)">Bet Log</button>
     </nav>
 
@@ -375,18 +384,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       </div>
       <div id="parlaysPage" class="parlays-page">
         <div class="loading-state"><div class="spinner"></div><span style="font-size:.75rem">Building optimal parlays...</span></div>
-      </div>
-    </div>
-
-    <!-- PROPS -->
-    <div id="tab-props" style="display:none">
-      <div class="page-header">
-        <span class="page-title" id="propsTitle">MLB — Player Props</span>
-        <button class="btn-sm ghost" onclick="loadProps(true)">↻ Refresh</button>
-      </div>
-      <div class="props-filters" id="propsFilters"></div>
-      <div id="propsList" class="props-list">
-        <div class="loading-state"><div class="spinner"></div><span style="font-size:.75rem">Loading props...</span></div>
       </div>
     </div>
 
@@ -496,21 +493,19 @@ function switchSport(sport,btn){
   document.querySelectorAll('.sport-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   if(currentTab==='odds'){document.getElementById('oddsTitle').textContent=`${sport.toUpperCase()} — Today's Games`;loadOdds();}
-  else if(currentTab==='props'){document.getElementById('propsTitle').textContent=`${sport.toUpperCase()} — Player Props`;loadProps(false);}
 }
 
 function switchTab(tab,btn){
   currentTab=tab;
   document.querySelectorAll('.inner-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  ['odds','picks','parlays','props','log'].forEach(t=>{
+  ['odds','picks','parlays','log'].forEach(t=>{
     const el=document.getElementById(`tab-${t}`);
     if(el) el.style.display=t===tab?'block':'none';
   });
   if(tab==='odds') loadOdds();
   else if(tab==='picks') loadAllPicks(false);
   else if(tab==='parlays') loadSuggestedParlays(false);
-  else if(tab==='props'){document.getElementById('propsTitle').textContent=`${currentSport.toUpperCase()} — Player Props`;loadProps(false);}
   else if(tab==='log'){loadBets();loadStats();}
 }
 
@@ -523,6 +518,7 @@ async function loadOdds(){
     const res=await fetch(`/api/odds/${currentSport}`);
     const data=await res.json();
     setApiBadge(true);
+    updateCreditCounter();
     if(!data.games?.length){
       el.innerHTML=`<div class="empty-state"><div class="empty-icon">📅</div>No games scheduled right now</div>`;
       document.getElementById('gamesCount').textContent='0 games';
@@ -965,6 +961,22 @@ function setApiBadge(live){
   el.textContent=live?'● LIVE':'● ERROR';
   el.className=live?'api-badge live':'api-badge';
 }
+
+async function updateCreditCounter(){
+  try{
+    const res=await fetch('/api/credits');
+    const data=await res.json();
+    if(data.used===null) return;
+    const pct=Math.round((data.used/data.total)*100);
+    document.getElementById('creditText').textContent=`${data.used} / ${data.total} credits`;
+    document.getElementById('creditFill').style.width=`${Math.min(100,pct)}%`;
+    const counter=document.getElementById('creditCounter');
+    counter.className=`credit-counter ${pct<60?'ok':pct<85?'warn':'low'}`;
+    counter.title=`API Credits: ${data.used} used, ${data.remaining} remaining this month`;
+  }catch{}
+}
+
+async function getApiKey(){return '';}
 
 function showToast(msg,type='success'){
   const t=document.getElementById('toast');

@@ -890,6 +890,20 @@ async function getTrackRecord() {
 
 // ── ENDPOINTS ──
 
+// Track API credits from response headers
+let lastCreditsUsed = null;
+let lastCreditsRemaining = null;
+
+app.get('/api/credits', (req, res) => {
+  res.json({
+    used: lastCreditsUsed,
+    remaining: lastCreditsRemaining,
+    total: lastCreditsUsed !== null && lastCreditsRemaining !== null
+      ? lastCreditsUsed + lastCreditsRemaining
+      : 500
+  });
+});
+
 app.get('/api/odds/:sport', async (req, res) => {
   const sport = req.params.sport.toLowerCase();
   const sportKey = SPORT_KEYS[sport];
@@ -899,6 +913,11 @@ app.get('/api/odds/:sport', async (req, res) => {
   try {
     const url = `${ODDS_BASE}/sports/${sportKey}/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=american&dateFormat=iso`;
     const response = await fetch(url);
+    // Track credits
+    const used = response.headers.get('x-requests-used');
+    const remaining = response.headers.get('x-requests-remaining');
+    if (used) lastCreditsUsed = parseInt(used);
+    if (remaining) lastCreditsRemaining = parseInt(remaining);
     const data = await response.json();
     if (!Array.isArray(data)) return res.json({games:[],message:data.message||'No games available'});
     const games = data.map(game=>{
